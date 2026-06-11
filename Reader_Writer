@@ -1,0 +1,89 @@
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
+
+using namespace std;
+
+int data = 0;
+int readers = 0;
+bool writerActive = false;
+
+mutex mtx;
+condition_variable cv;
+
+void reader(int id)
+{
+    {
+        unique_lock<mutex> lock(mtx);
+
+        cv.wait(lock, [] {
+            return !writerActive;
+        });
+
+        readers++;
+    }
+
+    // Reading section
+    cout << "Reader " << id
+         << " is reading data = "
+         << data << endl;
+
+    this_thread::sleep_for(chrono::milliseconds(500));
+
+    {
+        unique_lock<mutex> lock(mtx);
+
+        readers--;
+
+        if (readers == 0)
+            cv.notify_all();
+    }
+}
+
+void writer(int id)
+{
+    {
+        unique_lock<mutex> lock(mtx);
+
+        cv.wait(lock, [] {
+            return !writerActive && readers == 0;
+        });
+
+        writerActive = true;
+    }
+
+    // Writing section
+    data++;
+
+    cout << "Writer " << id
+         << " is writing data = "
+         << data << endl;
+
+    this_thread::sleep_for(chrono::milliseconds(1000));
+
+    {
+        unique_lock<mutex> lock(mtx);
+
+        writerActive = false;
+    }
+
+    cv.notify_all();
+}
+
+int main()
+{
+    vector<thread> threads;
+
+    threads.emplace_back(reader, 1);
+    threads.emplace_back(reader, 2);
+    threads.emplace_back(writer, 1);
+    threads.emplace_back(reader, 3);
+    threads.emplace_back(writer, 2);
+
+    for (auto &t : threads)
+        t.join();
+
+    return 0;
+}
